@@ -45,11 +45,16 @@ jobs:
 
       # ── 2. Download source IPA ────────────────────────────────────────────
       - name: Download source IPA
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fL "${{ inputs.ipa_url }}" -o source.ipa
+          gh release download v1.0-src \
+            --repo ${{ github.repository }} \
+            --pattern "*.ipa" \
+            --output source.ipa
           ls -lh source.ipa
           python3 -c "
-          import zipfile, sys
+          import zipfile
           with zipfile.ZipFile('source.ipa') as z:
               names = [n for n in z.namelist() if 'Watusi.dylib' in n or 'Info.plist' in n]
               for n in names: print(' ', n)
