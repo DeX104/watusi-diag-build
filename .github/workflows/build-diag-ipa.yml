@@ -32,12 +32,15 @@ jobs:
 
       - name: Link WatusiDump.dylib
         run: |
+          SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun --sdk iphoneos ld \
             -arch arm64 \
             -dylib \
             -platform_version ios 14.0 14.0 \
             -install_name @rpath/WatusiDump.dylib \
             -undefined dynamic_lookup \
+            -L"$SDK/usr/lib" \
+            -lSystem \
             WatusiDump.o \
             -o WatusiDump.dylib
           file WatusiDump.dylib
