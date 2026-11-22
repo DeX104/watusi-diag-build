@@ -1,0 +1,86 @@
+name: Build Diagnostic IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      ipa_url:
+        description: "URL to download watusi_original_duplicate.ipa (must be direct download link)"
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── 1. Compile WatusiDump.dylib for arm64-apple-ios ──────────────────
+      - name: Compile WatusiDump.o
+        run: |
+          xcrun --sdk iphoneos clang \
+            -arch arm64 \
+            -mios-version-min=14.0 \
+            -ffreestanding -fno-builtin -fno-stack-protector \
+            -O2 \
+            -Wno-incompatible-pointer-types \
+            -Wno-implicit-function-declaration \
+            -c src/WatusiDump.c \
+            -o WatusiDump.o
+          file WatusiDump.o
+
+      - name: Link WatusiDump.dylib
+        run: |
+          xcrun --sdk iphoneos ld \
+            -arch arm64 \
+            -dylib \
+            -platform_version ios 14.0 14.0 \
+            -install_name @rpath/WatusiDump.dylib \
+            -undefined dynamic_lookup \
+            WatusiDump.o \
+            -o WatusiDump.dylib
+          file WatusiDump.dylib
+          ls -lh WatusiDump.dylib
+
+      # ── 2. Download source IPA ────────────────────────────────────────────
+      - name: Download source IPA
+        run: |
+          curl -fL "${{ inputs.ipa_url }}" -o source.ipa
+          ls -lh source.ipa
+          python3 -c "
+          import zipfile, sys
+          with zipfile.ZipFile('source.ipa') as z:
+              names = [n for n in z.namelist() if 'Watusi.dylib' in n or 'Info.plist' in n]
+              for n in names: print(' ', n)
+          print('IPA OK')
+          "
+
+      # ── 3. Inject dylib and patch IPA ─────────────────────────────────────
+      - name: Inject WatusiDump.dylib
+        run: |
+          python3 scripts/inject_dump_dylib.py \
+            --dump-dylib WatusiDump.dylib \
+            --src-ipa    source.ipa \
+            --out-ipa    Watusi_diag.ipa
+          ls -lh Watusi_diag.ipa
+
+      # ── 4. Upload artifact ────────────────────────────────────────────────
+      - name: Upload Watusi_diag.ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Watusi_diag_${{ github.run_number }}
+          path: Watusi_diag.ipa
+          retention-days: 7
+
+      - name: Summary
+        run: |
+          SIZE=$(du -sh Watusi_diag.ipa | cut -f1)
+          echo "### Watusi_diag.ipa — $SIZE" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Come usare:**" >> $GITHUB_STEP_SUMMARY
+          echo "1. Scarica l'artifact dal passo *Upload*" >> $GITHUB_STEP_SUMMARY
+          echo "2. Installa via TrollStore" >> $GITHUB_STEP_SUMMARY
+          echo "3. WhatsApp → Watusi Settings → Themes" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Triplo tap** sullo schermo dei temi" >> $GITHUB_STEP_SUMMARY
+          echo "5. Files app → Su questo iPhone → WhatsApp → \`watusi_dump.txt\`" >> $GITHUB_STEP_SUMMARY
